@@ -1,11 +1,11 @@
 #include <windows.h>
 #include <stdint.h>
 
-struct {
-    int width;
-    int height;
-    uint32_t *pixels;
-} frame = {0};
+// struct {
+//     int width;
+//     int height;
+//     uint32_t *pixels;
+// } frame = {0};
 
 #if RAND_MAX == 32767
 #define Rand32() ((rand() << 16) + (rand() << 1) + (rand() & 1))
@@ -13,11 +13,55 @@ struct {
 #define Rand32() rand()
 #endif
 
-static BITMAPINFO frame_bitmap_info;
-static HBITMAP frame_bitmap = 0;
-static HDC frame_device_context = 0;
+static BITMAPINFO bitmap_info;
+static void *bitmap_memory;
+static int bitmap_width;
+static int bitmap_height;
 
-const char g_szClassName[] = "myWindowClass";
+static void
+Win32ResizeDIBSection(int width, int height)
+{
+    if (bitmap_memory)
+    {
+        VirtualFree(bitmap_memory,
+                    NULL,
+                    MEM_RELEASE);
+    }
+
+    bitmap_info.bmiHeader.biSize = sizeof(bitmap_info.bmiHeader);
+    bitmap_info.bmiHeader.biWidth = bitmap_width;
+    bitmap_info.bmiHeader.biHeight = bitmap_height;
+    bitmap_info.bmiHeader.biPlanes = 1;
+    bitmap_info.bmiHeader.biBitCount = 32;
+    bitmap_info.bmiHeader.biCompression = BI_RGB;
+
+    int bytes_per_pixel = 4;
+    int bitmap_memory_size = (width * height) * bytes_per_pixel;
+
+    bitmap_memory = VirtualAlloc(0,
+                                 bitmap_memory_size,
+                                 MEM_COMMIT,
+                                 PAGE_READWRITE);
+}
+
+static void
+Win32UpdateWindow(HDC device_context,
+                  RECT *window_rect,
+                  int x,
+                  int y,
+                  int width,
+                  int height)
+{
+    int window_width = window_rect->right - window_rect->left;
+    int window_height = window_rect->bottom - window_rect->top;
+    StretchDIBits(device_context,
+                  0, 0, bitmap_width, bitmap_height,
+                  0, 0, bitmap_width, bitmap_height,
+                  bitmap_memory,
+                  &bitmap_info,
+                  DIB_RGB_COLORS,
+                  SRCCOPY);
+}
 
 // Step 4: the Window Procedure
 LRESULT CALLBACK 
@@ -26,6 +70,7 @@ WndProc(HWND hwnd,
         WPARAM wParam,
         LPARAM lParam)
 {
+    LRESULT result = 0;
     switch(msg)
     {
         case WM_LBUTTONDOWN:
@@ -38,56 +83,69 @@ WndProc(HWND hwnd,
                               MAX_PATH);
             MessageBox(hwnd,
                        szFileName,
-                       "This program is:",
-                       MB_OK | MB_ICONINFORMATION); 
+                       "Cazzo clicchi coglione:",
+                       MB_OK | MB_ICONINFORMATION);
         } break;
         case WM_CLOSE:
         {
-            DestroyWindow(hwnd);
+            OutputDebugString("WM_CLOSE\n");
+            PostQuitMessage(0);
         } break;
         case WM_DESTROY:
         {
+            OutputDebugString("WM_DESTROY\n");
             PostQuitMessage(0);
         } break;
-        case WM_PAINT: {
-            static PAINTSTRUCT paint;
-            static HDC device_context;
-            device_context = BeginPaint(hwnd, &paint);
-            BitBlt(device_context,
+        case WM_PAINT:
+        {
+            PAINTSTRUCT paint;
+            HDC device_context = BeginPaint(hwnd, &paint);
+            int x = paint.rcPaint.left;
+            int y = paint.rcPaint.top;
+            int width = paint.rcPaint.right - paint.rcPaint.left;
+            int height = paint.rcPaint.bottom - paint.rcPaint.top;
+
+            RECT client_rect;
+            GetClientRect(hwnd, &client_rect);
+            Win32UpdateWindow(hwnd, x, y, width, height);
+            PatBlt(device_context,
                    paint.rcPaint.left,
                    paint.rcPaint.top,
                    paint.rcPaint.right  - paint.rcPaint.left,
                    paint.rcPaint.bottom - paint.rcPaint.top,
-                   frame_device_context,
-                   paint.rcPaint.left, paint.rcPaint.top,
                    SRCCOPY);
+            SetPixel(device_context,
+                     100,
+                     100,
+                     RGB(255, 0, 255));
             EndPaint(hwnd, &paint);
         } break;
-        case WM_SIZE: {
-            frame_bitmap_info.bmiHeader.biWidth  = LOWORD(lParam);
-            frame_bitmap_info.bmiHeader.biHeight = HIWORD(lParam);
+        case WM_SIZE:
+        {
+            RECT client_rect;
+            GetClientRect(hwnd, &client_rect);
+            int width = client_rect.right - client_rect.left;
+            int height = client_rect.bottom - client_rect.top;
+            Win32ResizeDIBSection(width, height);
 
-            if(frame_bitmap)
-            {
-                DeleteObject(frame_bitmap);
-            }
-            frame_bitmap = CreateDIBSection(NULL,
-                                            &frame_bitmap_info,
-                                            DIB_RGB_COLORS,
-                                            (void**)&frame.pixels, 0, 0);
-
-            SelectObject(frame_device_context,
-                         frame_bitmap);
-
-            frame.width =  LOWORD(lParam);
-            frame.height = HIWORD(lParam);
+            OutputDebugString("WM_SIZE\n");
+        } break;
+        case WM_ACTIVATEAPP:
+        {
+            result = DefWindowProc(hwnd,
+                                   msg,
+                                   wParam,
+                                   lParam);
         } break;
         default:
         {
-            return DefWindowProc(hwnd, msg, wParam, lParam);
+            result = DefWindowProc(hwnd,
+                                   msg,
+                                   wParam,
+                                   lParam);
         }
     }
-    return 0;
+    return result;
 }
 
 int WINAPI
@@ -112,7 +170,7 @@ WinMain(HINSTANCE hInstance,
     wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
     // wc.hbrBackground = (HBRUSH)(COLOR_WINDOWFRAME);
     wc.lpszMenuName  = NULL;
-    wc.lpszClassName = g_szClassName;
+    wc.lpszClassName = "MyWindow";
     wc.hIconSm       = LoadIcon(NULL, IDI_APPLICATION);
 
     if(!RegisterClassEx(&wc))
@@ -124,21 +182,15 @@ WinMain(HINSTANCE hInstance,
         return 0;
     }
 
-    frame_bitmap_info.bmiHeader.biSize = sizeof(frame_bitmap_info.bmiHeader);
-    frame_bitmap_info.bmiHeader.biPlanes = 1;
-    frame_bitmap_info.bmiHeader.biBitCount = 32;
-    frame_bitmap_info.bmiHeader.biCompression = BI_RGB;
-    frame_device_context = CreateCompatibleDC(0);
-
     // Step 2: Creating the Window
-    hwnd = CreateWindowEx(WS_EX_CLIENTEDGE,
-                          g_szClassName,
+    hwnd = CreateWindowEx(0,
+                          "MyWindow",
                           "tmeditor",
-                          WS_OVERLAPPEDWINDOW,
+                          WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                           CW_USEDEFAULT,
                           CW_USEDEFAULT,
-                          500,
-                          500,
+                          CW_USEDEFAULT,
+                          CW_USEDEFAULT,
                           NULL,
                           NULL,
                           hInstance,
@@ -159,16 +211,8 @@ WinMain(HINSTANCE hInstance,
     // Step 3: The Message Loop
     while(GetMessage(&Msg, NULL, 0, 0) > 0)
     {
-        TranslateMessage(&Msg);
+        TranslateMessage(&Msg); // for keyboard messages NOTE(tommaso): will be important later
         DispatchMessage(&Msg);
-
-        static unsigned int p = 0;
-        for (int i = 0; i < 100; i++)
-        {
-            frame.pixels[i % (frame.width*frame.height)] = Rand32();
-        }
-        // frame.pixels[(p++)%(frame.width*frame.height)] = Rand32();
-        // frame.pixels[Rand32()%(frame.width*frame.height)] = 0;
 
         InvalidateRect(hwnd, NULL, FALSE);
         UpdateWindow(hwnd);

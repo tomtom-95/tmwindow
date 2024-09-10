@@ -10,7 +10,8 @@
                 "/Zi",
                 "/Fe${fileDirname}\\${fileBasenameNoExtension}.exe",
                 "${file}",
-                "/link /subsystem:windows user32.lib"
+                "user32.lib",
+                "gdi32.lib"
             ],
             "options": {
                 "cwd": "${fileDirname}"
