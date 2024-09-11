@@ -1,65 +1,99 @@
 #include <windows.h>
+#include <stdint.h>
 
 #define local_persist static
 #define global_variable static
 #define internal static
 
+typedef uint8_t uint8;
+typedef uint16_t uint16;
+typedef uint32_t uint32;
+typedef uint64_t uint64;
+
+typedef int8_t int8;
+typedef int16_t int16;
+typedef int32_t int32;
+typedef int64_t int64;
+
 global_variable bool running;
 global_variable BITMAPINFO bitmap_info;
 global_variable void *bitmap_memory;
-global_variable HBITMAP bitmap_handle;
-global_variable HDC bitmap_device_context;
+global_variable int bitmap_width;
+global_variable int bitmap_height;
 
 internal void
 Win32ResizeDIBSection(int width, int height)
 {
-    // TODO(tommaso): bulletproof this, maybe don't free first, free after, then free first if it fails
-    // TODO(tommaso): free out DIBSection
-    if (bitmap_handle)
+    if (bitmap_memory)
     {
-        DeleteObject(bitmap_handle); 
-    }
-    if (!bitmap_device_context)
-    {
-        bitmap_device_context = CreateCompatibleDC(0);
+        VirtualFree(bitmap_memory, 0, MEM_RELEASE);
     }
 
+    bitmap_width = width;
+    bitmap_height = height;
+
     bitmap_info.bmiHeader.biSize = sizeof(bitmap_info.bmiHeader);
-    bitmap_info.bmiHeader.biWidth = width;
-    bitmap_info.bmiHeader.biHeight = width;
+    bitmap_info.bmiHeader.biWidth = bitmap_width;
+    bitmap_info.bmiHeader.biHeight = -bitmap_height;
     bitmap_info.bmiHeader.biPlanes = 1;
     bitmap_info.bmiHeader.biBitCount = 32;
     bitmap_info.bmiHeader.biCompression = BI_RGB;
 
-    bitmap_handle = CreateDIBSection(
-        bitmap_device_context,
-        &bitmap_info,
-        DIB_RGB_COLORS,
-        &bitmap_memory,
-        0, 0
-    );
+    int bytes_per_pixel = 4;
+    int bitmap_memory_size = bytes_per_pixel * (bitmap_width * bitmap_height);
+    bitmap_memory = VirtualAlloc(0, bitmap_memory_size, MEM_COMMIT, PAGE_READWRITE);
+
+    int pitch = width * bytes_per_pixel;
+    uint8 *row = (uint8 *)bitmap_memory;
+    for (int y = 0; y < bitmap_height; y++)
+    {
+        uint8 *pixel = (uint8 *)row;
+        for (int x = 0; x < bitmap_width; x++)
+        {
+            /*
+                Pixel in memory: RR GG BB xx
+            */
+            *pixel = 255;
+            pixel++;
+
+            *pixel = 0;
+            pixel++;
+
+            *pixel = 0;
+            pixel++;
+
+            *pixel = 0;
+            pixel++;
+        }
+
+        row += pitch;
+    }
 }
 
 internal void
 Win32UpdateWindow(HDC device_context,
-                  int x,
-                  int y,
-                  int width,
-                  int height)
+                  RECT *window_rect,
+                  int x, int y,
+                  int width, int height)
 {
+    int window_width = window_rect->right - window_rect->left;
+    int window_height = window_rect->bottom - window_rect->top;
     StretchDIBits(
         device_context,
+        /* 
         x, y, width, height,
         x, y, width, height,
+        */
+        0, 0, bitmap_width, bitmap_height,
+        0, 0, window_width, window_height,
         bitmap_memory,
         &bitmap_info,
-        DIB_RGB_COLORS,
-        SRCCOPY
+        DIB_RGB_COLORS, SRCCOPY
     );
 }
 
 LRESULT CALLBACK
-MainWindowProc(HWND window,
+MainWindowProc(HWND hwnd,
                UINT message,
                WPARAM w_param,
                LPARAM l_param)
@@ -72,7 +106,7 @@ MainWindowProc(HWND window,
         {
             RECT client_rect;
             GetClientRect(
-                window,
+                hwnd,
                 &client_rect
             );
             int width = client_rect.right - client_rect.left;
@@ -99,37 +133,26 @@ MainWindowProc(HWND window,
             OutputDebugStringA("WM_PAINT\n");
 
             PAINTSTRUCT paint;
-            HDC device_context = BeginPaint(window, &paint);
+            HDC device_context = BeginPaint(hwnd, &paint);
             int x = paint.rcPaint.left;
             int y = paint.rcPaint.top;
-            int height = paint.rcPaint.bottom - paint.rcPaint.top; 
             int width = paint.rcPaint.right - paint.rcPaint.left;
+            int height = paint.rcPaint.bottom - paint.rcPaint.top; 
+
+            RECT client_rect;
+            GetClientRect(hwnd, &client_rect);
             Win32UpdateWindow(
                 device_context,
-                x, y,
-                width, height
+                &client_rect,
+                x, y, width, height
             );
-            local_persist DWORD operation = WHITENESS;
-            if (operation == WHITENESS)
-            {
-                operation = BLACKNESS;
-            }
-            else
-            {
-                operation = WHITENESS;
-            }
-            PatBlt(
-                device_context,
-                x, y, width, height,
-                operation
-            );
-            EndPaint(window, &paint);
+            EndPaint(hwnd, &paint);
         } break;
         default:
         {
             OutputDebugStringA("default\n");
             result = DefWindowProcA(
-                window,
+                hwnd,
                 message,
                 w_param,
                 l_param
@@ -146,7 +169,7 @@ WinMain(HINSTANCE instance,
         LPSTR command_line,
         int show_code)
 {
-    WNDCLASS window_class = {0};
+    WNDCLASSA window_class = {0};
 
     window_class.style = CS_OWNDC|CS_HREDRAW|CS_VREDRAW;
     window_class.lpfnWndProc = MainWindowProc;
@@ -154,7 +177,7 @@ WinMain(HINSTANCE instance,
     // window_class.hIcon = ;
     window_class.lpszClassName = "tmWindow";
 
-    if (RegisterClass(&window_class))
+    if (RegisterClassA(&window_class))
     {
         HWND window_handle = CreateWindowExA(
             0,
