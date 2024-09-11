@@ -11,7 +11,7 @@ goto :eof
 :build
     echo Building ...
     rem call cl /nologo /EHsc /Zi main.c /link /subsystem:windows user32.lib gdi32.lib
-    call cl /nologo /EHsc /Zi main.c user32.lib gdi32.lib
+    call cl /nologo /EHsc /Zi main.cpp user32.lib gdi32.lib
     goto :eof
 
 :build_with_resource
