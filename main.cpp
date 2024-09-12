@@ -15,79 +15,98 @@ typedef int16_t int16;
 typedef int32_t int32;
 typedef int64_t int64;
 
+typedef struct win32_offscreen_buffer
+{
+    BITMAPINFO info;
+    void *memory;
+    int width;
+    int height;
+    int pitch;
+    int bytes_per_pixel;
+} win32_offscreen_buffer;
+
+typedef struct win32_window_dimension
+{
+    int width;
+    int height;
+} win32_window_dimension;
+
 global_variable bool running;
-global_variable BITMAPINFO bitmap_info;
-global_variable void *bitmap_memory;
-global_variable int bitmap_width;
-global_variable int bitmap_height;
+global_variable win32_offscreen_buffer global_back_buffer;
+
+win32_window_dimension
+GetWindowDimension(HWND window)
+{
+    win32_window_dimension result;
+
+    RECT client_rect;
+    GetClientRect(window, &client_rect);
+    result.width = client_rect.right - client_rect.left;
+    result.height = client_rect.bottom - client_rect.top;
+
+    return result;
+}
 
 internal void
-Win32ResizeDIBSection(int width, int height)
+RenderWeirdGradient(win32_offscreen_buffer buffer, int x_offset, int y_offset)
 {
-    if (bitmap_memory)
+    // let's see what optimizer does
+    uint8 *row = (uint8 *)buffer.memory;
+    for (int y = 0; y < buffer.height; y++)
     {
-        VirtualFree(bitmap_memory, 0, MEM_RELEASE);
-    }
-
-    bitmap_width = width;
-    bitmap_height = height;
-
-    bitmap_info.bmiHeader.biSize = sizeof(bitmap_info.bmiHeader);
-    bitmap_info.bmiHeader.biWidth = bitmap_width;
-    bitmap_info.bmiHeader.biHeight = -bitmap_height;
-    bitmap_info.bmiHeader.biPlanes = 1;
-    bitmap_info.bmiHeader.biBitCount = 32;
-    bitmap_info.bmiHeader.biCompression = BI_RGB;
-
-    int bytes_per_pixel = 4;
-    int bitmap_memory_size = bytes_per_pixel * (bitmap_width * bitmap_height);
-    bitmap_memory = VirtualAlloc(0, bitmap_memory_size, MEM_COMMIT, PAGE_READWRITE);
-
-    int pitch = width * bytes_per_pixel;
-    uint8 *row = (uint8 *)bitmap_memory;
-    for (int y = 0; y < bitmap_height; y++)
-    {
-        uint8 *pixel = (uint8 *)row;
-        for (int x = 0; x < bitmap_width; x++)
+        uint32 *pixel = (uint32 *)row;
+        for (int x = 0; x < buffer.width; x++)
         {
-            /*
-                Pixel in memory: RR GG BB xx
-            */
-            *pixel = 255;
-            pixel++;
+            uint8 Blue = (x + x_offset);
+            uint8 Green = (y + y_offset);
 
-            *pixel = 0;
-            pixel++;
-
-            *pixel = 0;
-            pixel++;
-
-            *pixel = 0;
-            pixel++;
+            *pixel++ = ((Green << 8) | Blue);
         }
 
-        row += pitch;
+        row += buffer.pitch;
     }
 }
 
 internal void
-Win32UpdateWindow(HDC device_context,
-                  RECT *window_rect,
-                  int x, int y,
-                  int width, int height)
+Win32ResizeDIBSection(win32_offscreen_buffer *buffer, int width, int height)
 {
-    int window_width = window_rect->right - window_rect->left;
-    int window_height = window_rect->bottom - window_rect->top;
+    if (buffer->memory)
+    {
+        VirtualFree(buffer->memory, 0, MEM_RELEASE);
+    }
+
+    buffer->width = width;
+    buffer->height = height;
+    buffer->bytes_per_pixel = 4;
+    buffer->pitch = buffer->bytes_per_pixel * buffer->width;
+
+    buffer->info.bmiHeader.biSize = sizeof(buffer->info.bmiHeader);
+    buffer->info.bmiHeader.biWidth = buffer->width;
+    buffer->info.bmiHeader.biHeight = -buffer->height;
+    buffer->info.bmiHeader.biPlanes = 1;
+    buffer->info.bmiHeader.biBitCount = 32;
+    buffer->info.bmiHeader.biCompression = BI_RGB;
+
+    int bitmap_area = buffer->width * buffer->height;
+    int bitmap_memory_size = buffer->bytes_per_pixel * bitmap_area;
+    buffer->memory = VirtualAlloc(
+        0,
+        bitmap_memory_size,
+        MEM_COMMIT, PAGE_READWRITE
+    );
+}
+
+internal void
+Win32DisplayBufferInWindow(HDC device_context,
+                           win32_window_dimension window_dimension,
+                           win32_offscreen_buffer buffer)
+{
     StretchDIBits(
         device_context,
-        /* 
-        x, y, width, height,
-        x, y, width, height,
-        */
-        0, 0, bitmap_width, bitmap_height,
-        0, 0, window_width, window_height,
-        bitmap_memory,
-        &bitmap_info,
+        0, 0, window_dimension.width, window_dimension.height,
+        0, 0, buffer.width, buffer.height,
+        buffer.memory,
+        &buffer.info,
         DIB_RGB_COLORS, SRCCOPY
     );
 }
@@ -104,14 +123,12 @@ MainWindowProc(HWND hwnd,
     {
         case WM_SIZE:
         {
-            RECT client_rect;
-            GetClientRect(
-                hwnd,
-                &client_rect
+            win32_window_dimension window_dimension = GetWindowDimension(hwnd);
+            Win32ResizeDIBSection(
+                &global_back_buffer,
+                window_dimension.width,
+                window_dimension.height
             );
-            int width = client_rect.right - client_rect.left;
-            int height = client_rect.bottom - client_rect.top;
-            Win32ResizeDIBSection(width, height);
             OutputDebugStringA("WM_SIZE\n");
         } break;
         case WM_DESTROY:
@@ -132,6 +149,7 @@ MainWindowProc(HWND hwnd,
         {
             OutputDebugStringA("WM_PAINT\n");
 
+            RenderWeirdGradient(global_back_buffer, 0, 0);
             PAINTSTRUCT paint;
             HDC device_context = BeginPaint(hwnd, &paint);
             int x = paint.rcPaint.left;
@@ -139,12 +157,11 @@ MainWindowProc(HWND hwnd,
             int width = paint.rcPaint.right - paint.rcPaint.left;
             int height = paint.rcPaint.bottom - paint.rcPaint.top; 
 
-            RECT client_rect;
-            GetClientRect(hwnd, &client_rect);
-            Win32UpdateWindow(
+            win32_window_dimension window_dimension = GetWindowDimension(hwnd);
+            Win32DisplayBufferInWindow(
                 device_context,
-                &client_rect,
-                x, y, width, height
+                window_dimension,
+                global_back_buffer
             );
             EndPaint(hwnd, &paint);
         } break;
@@ -171,7 +188,8 @@ WinMain(HINSTANCE instance,
 {
     WNDCLASSA window_class = {0};
 
-    window_class.style = CS_OWNDC|CS_HREDRAW|CS_VREDRAW;
+    // repaint the whole window when I resize, not just the new section
+    window_class.style = CS_HREDRAW|CS_VREDRAW;
     window_class.lpfnWndProc = MainWindowProc;
     window_class.hInstance = instance;
     // window_class.hIcon = ;
@@ -179,7 +197,7 @@ WinMain(HINSTANCE instance,
 
     if (RegisterClassA(&window_class))
     {
-        HWND window_handle = CreateWindowExA(
+        HWND window = CreateWindowExA(
             0,
             window_class.lpszClassName, 
             "New Window",
@@ -194,22 +212,36 @@ WinMain(HINSTANCE instance,
             0
         );
 
-        if (window_handle != NULL)
+        if (window != NULL)
         {
+            int x_offset = 0;
+            int y_offset = 0;
+
             running = true;
             while (running)
             {
                 MSG message;
-                BOOL message_result = GetMessageA(&message, 0, 0, 0);
-                if (message_result > 0)
+                while (PeekMessageA(&message, 0, 0, 0, PM_REMOVE))
                 {
+                    if (message.message == WM_QUIT)
+                    {
+                        running = false;
+                    }
                     TranslateMessage(&message);
                     DispatchMessageA(&message);
                 }
-                else
-                {
-                    break;
-                }
+
+                RenderWeirdGradient(global_back_buffer, x_offset, y_offset);
+                HDC device_context = GetDC(window);
+                win32_window_dimension window_dimension = GetWindowDimension(window);
+                Win32DisplayBufferInWindow(
+                    device_context,
+                    window_dimension,
+                    global_back_buffer
+                );
+                ReleaseDC(window, device_context);
+
+                x_offset++;
             }
         }
         else
