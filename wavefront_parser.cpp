@@ -128,16 +128,16 @@ GetIdxLineEnd(char *data, size_t data_len, size_t line_start)
                 line_end++;
                 break;
             }
-            else
-            {
-                line_end++;
-            }
 #else
             if (data[line_end] == '\n')
             {
                 break;
             }
 #endif // _WIN32
+            else
+            {
+                line_end++;
+            }
         }
     }
 
