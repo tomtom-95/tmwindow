@@ -1,54 +1,19 @@
-#include <windows.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <stdint.h>
+#include <stdarg.h>
+#include <time.h>
+#include <sys/stat.h>
 
-#define local_persist static
-#define global_variable static
-#define internal static
+#include <windows.h>
 
-typedef uint8_t uint8;
-typedef uint16_t uint16;
-typedef uint32_t uint32;
-typedef uint64_t uint64;
+#include "utils.hpp"
+#include "drawing.cpp"
+#include "wavefront_parser.cpp"
+#include "logger.c"
 
-typedef int8_t int8;
-typedef int16_t int16;
-typedef int32_t int32;
-typedef int64_t int64;
-
-typedef struct win32_offscreen_buffer
-{
-    BITMAPINFO info;
-    void *memory;
-    int width;
-    int height;
-    int pitch;
-    int bytes_per_pixel;
-} win32_offscreen_buffer;
-
-typedef struct win32_window_dimension
-{
-    int width;
-    int height;
-} win32_window_dimension;
-
-typedef enum
-{
-    RED   = 0x00ff0000,
-    GREEN = 0x0000ff00,
-    BLUE  = 0x000000ff,
-    WHITE = 0x00ffffff
-} Color;
-
-global_variable bool running;
-global_variable win32_offscreen_buffer global_back_buffer;
-
-void
-IntSwap(int *a, int *b)
-{
-    int tmp = *a;
-    *a = *b;
-    *b = tmp;
-}
+static bool running;
+static win32_offscreen_buffer global_back_buffer;
 
 win32_window_dimension
 GetWindowDimension(HWND window)
@@ -63,159 +28,10 @@ GetWindowDimension(HWND window)
     return result;
 }
 
-internal void
-RenderWeirdGradient(win32_offscreen_buffer buffer, int blue_offset, int green_offset)
-{
-    // let's see what optimizer does
-    uint8 *row = (uint8 *)buffer.memory;
-    for (int y = 0; y < buffer.height; y++)
-    {
-        uint32 *pixel = (uint32 *)row;
-        for (int x = 0; x < buffer.width; x++)
-        {
-            uint8 Blue = (x + blue_offset);
-            uint8 Green = (y + green_offset);
-
-            *pixel++ = ((Green << 8) | Blue);
-        }
-
-        row += 4 * buffer.pitch;
-    }
-}
-
-// Simple but slow implementation of drawing a line
-internal void
-DrawLineSlowly(win32_offscreen_buffer buffer,
-               int x0, int x1,
-               int y0, int y1,
-               Color color)
-{
-    uint32_t *pixel = (uint32_t *)buffer.memory;
-    for (float t = 0.; t < 1.; t += .001)
-    {
-        int x = x0 + (x1 - x0) * t;
-        int y = y0 + (y1 - y0) * t;
-        *(pixel + y * buffer.pitch + x) = color;
-    }
-}
-
-// Draw line which is garanteed to have slope greater than 1
-// or less than -1
-internal void
-DrawLineHigh(win32_offscreen_buffer buffer,
-             int x0, int x1,
-             int y0, int y1,
-             Color color)
-{
-    // f(x, y) = A * x + B * y + C
-    int A = y1 - y0;
-    int B = x0 - x1;
-    int C = (y0 - y1) * x0 + (x1 - x0) * y0;
-
-    uint32_t *pixel;
-    int x = x0;
-    if (x1 > x0)
-    {
-        for (int y = y0; y < y1; y++)
-        {
-            int f = A * x + B * y + C; 
-            if (f < 0)
-            {
-                x++;
-            }
-            pixel = (uint32_t *)buffer.memory + buffer.pitch * y + x;
-            *pixel = WHITE;
-        }
-    }
-    else
-    {
-        for (int y = y0; y < y1; y++)
-        {
-            int f = A * x + B * y + C; 
-            if (f > 0)
-            {
-                x--;
-            }
-            pixel = (uint32_t *)buffer.memory + buffer.pitch * y + x;
-            *pixel = WHITE;
-        }
-    }
-}
-
-// Draw line which is garanteed to have slope between -1 and 1
-internal void
-DrawLineLow(win32_offscreen_buffer buffer,
-            int x0, int x1,
-            int y0, int y1,
-            Color color)
-{
-    // f(x, y) = A * x + B * y + C
-    int A = y1 - y0;
-    int B = x0 - x1;
-    int C = (y0 - y1) * x0 + (x1 - x0) * y0;
-
-    uint32_t *pixel;
-    int y = y0;
-    if (y1 > y0)
-    {
-        for (int x = x0; x < x1; x++)
-        {
-            int f = A * x + B * y + C; 
-            if (f > 0)
-            {
-                y++;
-            }
-            pixel = (uint32_t *)buffer.memory + buffer.pitch * y + x;
-            *pixel = WHITE;
-        }
-    }
-    else
-    {
-        for (int x = x0; x < x1; x++)
-        {
-            int f = A * x + B * y + C; 
-            if (f < 0)
-            {
-                y--;
-            }
-            pixel = (uint32_t *)buffer.memory + buffer.pitch * y + x;
-            *pixel = WHITE;
-        }
-    }
-}
-
-internal void
-DrawLineBresenham(win32_offscreen_buffer buffer,
-                  int x0, int x1,
-                  int y0, int y1,
-                  Color color)
-{
-    if (abs(x1 - x0) > abs(y1 - y0))
-    {
-        if (x1 > x0)
-        {
-            DrawLineLow(buffer, x0, x1, y0, y1, color);
-        }
-        else
-        {
-            DrawLineLow(buffer, x1, x0, y1, y0, color);
-        }
-    }
-    else
-    {
-        if (y1 > y0)
-        {
-            DrawLineHigh(buffer, x0, x1, y0, y1, color);
-        }
-        else
-        {
-            DrawLineHigh(buffer, x1, x0, y1, y0, color);
-        }
-    }
-}
-
-internal void
-Win32ResizeDIBSection(win32_offscreen_buffer *buffer, int width, int height)
+static void
+Win32ResizeDIBSection(win32_offscreen_buffer *buffer,
+                      int width,
+                      int height)
 {
     if (buffer->memory)
     {
@@ -243,7 +59,7 @@ Win32ResizeDIBSection(win32_offscreen_buffer *buffer, int width, int height)
     );
 }
 
-internal void
+static void
 Win32DisplayBufferInWindow(HDC device_context,
                            int window_width,
                            int window_height,
@@ -265,6 +81,9 @@ MainWindowProc(HWND hwnd,
                WPARAM w_param,
                LPARAM l_param)
 {
+    WavefrontParser("./models/little_african_head.obj");
+    return 0;
+
     LRESULT result = 0;
 
     switch(message)
