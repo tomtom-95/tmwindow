@@ -1,6 +1,8 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
+#include <windows.h>
+
 typedef struct win32_offscreen_buffer
 {
     BITMAPINFO info;
@@ -33,9 +35,9 @@ struct Buffer
 
 typedef struct Vertex
 {
-    int v0;
-    int v1;
-    int v2;
+    double v0;
+    double v1;
+    double v2;
 } Vertex;
 
 typedef struct VertexBuffer
@@ -43,6 +45,19 @@ typedef struct VertexBuffer
     size_t len;
     Vertex *vertex;
 } VertexBuffer;
+
+typedef struct LinkedListVertexBuffer
+{
+    VertexBuffer vertex_buffer;
+    VertexBuffer *next;
+} LinkedListVertexBuffer;
+
+typedef struct Face
+{
+    int vertex_indices[3];
+    int texture_indices[3];
+    int normal_indices[3];
+} Face;
 
 
 void

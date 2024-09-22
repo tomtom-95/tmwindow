@@ -81,9 +81,6 @@ MainWindowProc(HWND hwnd,
                WPARAM w_param,
                LPARAM l_param)
 {
-    WavefrontParser("./models/little_african_head.obj");
-    return 0;
-
     LRESULT result = 0;
 
     switch(message)
@@ -153,6 +150,9 @@ WinMain(HINSTANCE instance,
         LPSTR command_line,
         int show_code)
 {
+    WavefrontParser("./models/little_african_head.obj");
+    return 0;
+
     WNDCLASSA window_class = {0};
 
     // repaint the whole window when I resize, not just the new section
