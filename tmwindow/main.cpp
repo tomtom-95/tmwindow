@@ -150,7 +150,38 @@ WinMain(HINSTANCE instance,
         LPSTR command_line,
         int show_code)
 {
-    WavefrontParser("./models/little_african_head.obj");
+    /*
+        Allocation for vertices
+    */
+    GrowableBuffer vertex_buffer = {};
+    vertex_buffer.allocation_count  = 0;
+    vertex_buffer.allocation_size   = sizeof(Vertex) * 10000;
+    vertex_buffer.allocation_offset = 0;
+
+    vertex_buffer.data = (char *)VirtualAlloc(0, GigaByte,
+                                              MEM_RESERVE, PAGE_READWRITE);
+
+    VirtualAlloc(vertex_buffer.data,
+                 vertex_buffer.allocation_size,
+                 MEM_COMMIT, PAGE_READWRITE);
+    vertex_buffer.allocation_count++;
+
+    /*
+        Allocation for faces
+    */
+    GrowableBuffer face_buffer = {};
+    face_buffer.allocation_count  = 0;
+    face_buffer.allocation_size   = sizeof(Face) * 10000;
+    face_buffer.allocation_offset = 0;
+    face_buffer.data = (char *)VirtualAlloc(0, GigaByte,
+                                            MEM_RESERVE, PAGE_READWRITE);
+
+    VirtualAlloc(face_buffer.data,
+                 face_buffer.allocation_size,
+                 MEM_COMMIT, PAGE_READWRITE);
+    face_buffer.allocation_count++;
+
+    WavefrontParser("./models/little_african_head.obj", &vertex_buffer, &face_buffer);
     return 0;
 
     WNDCLASSA window_class = {0};

@@ -3,6 +3,12 @@
 
 #include <windows.h>
 
+#define KiloByte (1024LL)
+#define MegaByte (1024LL * 1024LL)
+#define GigaByte (1024LL * 1024LL * 1024LL)
+
+#define ArrayCount(Array) (sizeof(Array) / sizeof((Array)[0]))
+
 typedef struct win32_offscreen_buffer
 {
     BITMAPINFO info;
@@ -33,6 +39,14 @@ struct Buffer
     char *data;
 };
 
+struct GrowableBuffer
+{
+    int allocation_count;
+    int allocation_size;
+    int allocation_offset;
+    char *data;
+};
+
 typedef struct Vertex
 {
     double v0;
@@ -40,25 +54,12 @@ typedef struct Vertex
     double v2;
 } Vertex;
 
-typedef struct VertexBuffer
-{
-    size_t len;
-    Vertex *vertex;
-} VertexBuffer;
-
-typedef struct LinkedListVertexBuffer
-{
-    VertexBuffer vertex_buffer;
-    VertexBuffer *next;
-} LinkedListVertexBuffer;
-
 typedef struct Face
 {
     int vertex_indices[3];
     int texture_indices[3];
     int normal_indices[3];
 } Face;
-
 
 void
 IntSwap(int *a, int *b)
