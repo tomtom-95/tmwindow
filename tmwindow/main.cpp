@@ -229,25 +229,26 @@ WinMain(HINSTANCE instance,
                     DispatchMessageA(&message);
                 }
 
-                int face_offset = 0;
-                while (true)
-                {
-                    if (face_offset == face_buffer.allocation_offset)
-                    {
-                        break;
-                    }
-                    else
-                    {
-                        Face *face = (Face *)(face_buffer.data + face_offset);
-                        Vertex *vertex0 = (Vertex *)(vertex_buffer.data + sizeof(Vertex) * ((face->vertex_indices)[0] - 1));
-                        Vertex *vertex1 = (Vertex *)(vertex_buffer.data + sizeof(Vertex) * ((face->vertex_indices)[1] - 1));
-                        Vertex *vertex2 = (Vertex *)(vertex_buffer.data + sizeof(Vertex) * ((face->vertex_indices)[2] - 1));
+                // int face_offset = 0;
+                // while (true)
+                // {
+                //     if (face_offset == face_buffer.allocation_offset)
+                //     {
+                //         break;
+                //     }
+                //     else
+                //     {
+                //         Face *face = (Face *)(face_buffer.data + face_offset);
+                //         Vertex *vertex0 = (Vertex *)(vertex_buffer.data + sizeof(Vertex) * ((face->vertex_indices)[0] - 1));
+                //         Vertex *vertex1 = (Vertex *)(vertex_buffer.data + sizeof(Vertex) * ((face->vertex_indices)[1] - 1));
+                //         Vertex *vertex2 = (Vertex *)(vertex_buffer.data + sizeof(Vertex) * ((face->vertex_indices)[2] - 1));
 
-                        DrawTriangle(global_back_buffer, *vertex0, *vertex1, *vertex2);
+                //         DrawTriangle(global_back_buffer, *vertex0, *vertex1, *vertex2);
 
-                        face_offset += sizeof(Face);
-                    }
-                }
+                //         face_offset += sizeof(Face);
+                //     }
+                // }
+                ColorWireFrameObj(global_back_buffer, face_buffer, vertex_buffer);
 
                 HDC device_context = GetDC(window);
                 win32_window_dimension window_dimension = GetWindowDimension(window);

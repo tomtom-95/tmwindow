@@ -61,6 +61,21 @@ typedef struct Face
     int normal_indices[3];
 } Face;
 
+typedef struct Vector3D
+{
+    double x;
+    double y;
+    double z;
+};
+
+struct TriangleBoundingBox
+{
+    int x_min;
+    int x_max;
+    int y_min;
+    int y_max;
+};
+
 void
 IntSwap(int *a, int *b)
 {
