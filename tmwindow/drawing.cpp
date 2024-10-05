@@ -162,39 +162,81 @@ DrawLineBresenham(win32_offscreen_buffer buffer,
     }
 }
 
+// TODO(tommaso): bad name, find a better one
+static Vertex
+VertexDenormalize(win32_offscreen_buffer buffer,
+                  Vertex vertex)
+{
+    int width_scale = (buffer.width - 1) / 2;
+    int height_scale = (buffer.height - 1) / 2;
+
+    vertex.v0 = (vertex.v0 + 1) * width_scale;
+    vertex.v1 = (vertex.v1 + 1) * height_scale;
+
+    return vertex;
+}
+
 static void
 DrawTriangle(win32_offscreen_buffer buffer,
              Vertex vertex0,
              Vertex vertex1,
              Vertex vertex2)
 {
-    int width_scale = (buffer.width - 1) / 2;
-    int height_scale = (buffer.height - 1) / 2;
+    vertex0 = VertexDenormalize(buffer, vertex0);
+    vertex1 = VertexDenormalize(buffer, vertex1);
+    vertex2 = VertexDenormalize(buffer, vertex2);
 
     DrawLineBresenham(
         buffer,
-        (vertex0.v0 + 1) * width_scale,
-        (vertex1.v0 + 1) * width_scale,
-        (vertex0.v1 + 1) * height_scale,
-        (vertex1.v1 + 1) * height_scale,
+        vertex0.v0,
+        vertex1.v0,
+        vertex0.v1,
+        vertex1.v1,       
         WHITE
     );
     DrawLineBresenham(
         buffer,
-        (vertex0.v0 + 1) * width_scale,
-        (vertex2.v0 + 1) * width_scale,
-        (vertex0.v1 + 1) * height_scale,
-        (vertex2.v1 + 1) * height_scale,
+        vertex0.v0,
+        vertex2.v0,
+        vertex0.v1,
+        vertex2.v1,
         WHITE
     );
     DrawLineBresenham(
         buffer,
-        (vertex1.v0 + 1) * width_scale,
-        (vertex2.v0 + 1) * width_scale,
-        (vertex1.v1 + 1) * height_scale,
-        (vertex2.v1 + 1) * height_scale,
+        vertex1.v0,
+        vertex2.v0,
+        vertex1.v1,
+        vertex2.v1,
         WHITE
     );
+}
+
+static void
+DrawWireMesh(win32_offscreen_buffer buffer,
+             GrowableBuffer face_buffer,
+             GrowableBuffer vertex_buffer)
+{
+
+    int face_offset = 0;
+    while (true)
+    {
+        if (face_offset == face_buffer.allocation_offset)
+        {
+            break;
+        }
+        else
+        {
+            Face *face = (Face *)(face_buffer.data + face_offset);
+            Vertex *vertex0 = (Vertex *)(vertex_buffer.data + sizeof(Vertex) * ((face->vertex_indices)[0] - 1));
+            Vertex *vertex1 = (Vertex *)(vertex_buffer.data + sizeof(Vertex) * ((face->vertex_indices)[1] - 1));
+            Vertex *vertex2 = (Vertex *)(vertex_buffer.data + sizeof(Vertex) * ((face->vertex_indices)[2] - 1));
+
+            DrawTriangle(buffer, *vertex0, *vertex1, *vertex2);
+
+            face_offset += sizeof(Face);
+        }
+    }
 }
 
 // TODO(tommaso): too many doubles!!!
@@ -211,17 +253,7 @@ VectorNormalize(Vector3D vector)
     return vector;
 }
 
-static Vertex
-VertexDenormalize(win32_offscreen_buffer buffer,
-                  Vertex vertex)
-{
-    vertex.v0 = (vertex.v0 + 1.0) * (buffer.width / 2.0 - 1);
-    vertex.v1 = (vertex.v1 + 1.0) * (buffer.height / 2.0 - 1);
-
-    return vertex;
-}
-
-struct Vector3D
+static Vector3D
 TriangleGetNormalVector(Vertex A,
                         Vertex B,
                         Vertex C)
@@ -229,7 +261,7 @@ TriangleGetNormalVector(Vertex A,
     struct Vertex v0 = {C.v0 - A.v0, C.v1 - A.v1, C.v2 - A.v2};
     struct Vertex v1 = {B.v0 - A.v0, B.v1 - A.v1, B.v2 - A.v2};
 
-    struct Vector3D normal_vector;
+    Vector3D normal_vector;
 
     // compute the cross product
     normal_vector.x =   v0.v1 * v1.v2 - v0.v2 * v1.v1;
@@ -249,7 +281,7 @@ GetTriangleDeterminant(Vertex v0,
     return determinant;
 }
 
-int
+double
 GetEdgeFunction(Vertex A,
                 Vertex B,
                 Vertex C)
@@ -303,10 +335,11 @@ ColorTriangle(win32_offscreen_buffer buffer,
     struct TriangleBoundingBox bounding_box;
     bounding_box = GetTriangleBoundingBox(A, B, C);
 
-    int edge = GetEdgeFunction(A, B, C);
-    for (int i = bounding_box.x_min; i < bounding_box.x_max; i++)
+    // TODO(tommaso): changing the range adding -1 and +1 to obtain a smooth image
+    //                it's hacky: find a better way (related to getting rid of double in the code)
+    for (int i = bounding_box.x_min - 1; i < bounding_box.x_max + 1; i++)
     {
-        for (int j = bounding_box.y_min; j < bounding_box.y_max; j++)
+        for (int j = bounding_box.y_min - 1; j < bounding_box.y_max + 1; j++)
         {
             struct Vertex P = {i, j, 0};
             if (GetEdgeFunction(A, B, P) > 0 &&
@@ -327,9 +360,6 @@ ColorWireFrameObj(win32_offscreen_buffer buffer,
 {
     int light_direction[3] = {0, 0, -1};
 
-    int width_scale = (buffer.width - 1) / 2;
-    int height_scale = (buffer.height - 1) / 2;
-
     int face_offset = 0;
     while (true)
     {
@@ -344,7 +374,7 @@ ColorWireFrameObj(win32_offscreen_buffer buffer,
             Vertex *vertex1 = (Vertex *)(vertex_buffer.data + sizeof(Vertex) * ((face->vertex_indices)[1] - 1));
             Vertex *vertex2 = (Vertex *)(vertex_buffer.data + sizeof(Vertex) * ((face->vertex_indices)[2] - 1));
 
-            struct Vector3D normal_vector = TriangleGetNormalVector(*vertex0,
+            Vector3D normal_vector = TriangleGetNormalVector(*vertex0,
                                                                     *vertex1,
                                                                     *vertex2);
             normal_vector = VectorNormalize(normal_vector);
@@ -358,9 +388,11 @@ ColorWireFrameObj(win32_offscreen_buffer buffer,
 
             if (intensity > 0)
             {
-                int color = RED   * (uint8_t)(intensity * 255) |
-                            GREEN * (uint8_t)(intensity * 255) |
-                            BLUE  * (uint8_t)(intensity * 255);
+                int intintensity = (int)(intensity * 255);
+                int color = (intintensity << 16) | (intintensity << 8) | intintensity;
+                // int color = RED   * (uint32_t)(intensity * 255) |
+                //             GREEN * (uint32_t)(intensity * 255) |
+                //             BLUE  * (uint32_t)(intensity * 255);
                 ColorTriangle(buffer,
                               v0, v1, v2,
                               color);
