@@ -186,7 +186,7 @@ WavefrontParser(char *filepath, GrowableBuffer *vertex_buffer, GrowableBuffer *f
         {
             ParseVertex(&ptr, vertex_buffer);
         }
-        else if (*ptr == 'f')
+        else if (*ptr == 'f' && *(ptr + 1) == ' ')
         {
             ParseFace(&ptr, face_buffer);
         }

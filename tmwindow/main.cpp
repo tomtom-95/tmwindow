@@ -181,8 +181,12 @@ WinMain(HINSTANCE instance,
                  MEM_COMMIT, PAGE_READWRITE);
     face_buffer.allocation_count++;
 
-    WavefrontParser("./models/little_african_head.obj", &vertex_buffer, &face_buffer);
-    return 0;
+    /*
+        Parsing of wavefront object file
+    */
+    WavefrontParser("./models/african_head.obj",
+                    &vertex_buffer,
+                    &face_buffer);
 
     WNDCLASSA window_class = {0};
 
@@ -190,7 +194,6 @@ WinMain(HINSTANCE instance,
     window_class.style = CS_HREDRAW|CS_VREDRAW;
     window_class.lpfnWndProc = MainWindowProc;
     window_class.hInstance = instance;
-    // window_class.hIcon = ;
     window_class.lpszClassName = "tmWindow";
 
     if (RegisterClassA(&window_class))
@@ -212,9 +215,6 @@ WinMain(HINSTANCE instance,
 
         if (window != NULL)
         {
-            int x_offset = 0;
-            int y_offset = 0;
-
             running = true;
             while (running)
             {
@@ -229,19 +229,26 @@ WinMain(HINSTANCE instance,
                     DispatchMessageA(&message);
                 }
 
-                // RenderWeirdGradient(global_back_buffer, x_offset, 0);
-                int line_x0 = 10 % global_back_buffer.width;
-                int line_x1 = 100 % global_back_buffer.width;
-                int line_y0 = 500 % global_back_buffer.height;
-                int line_y1 = 10 % global_back_buffer.height;
-                DrawLineBresenham(
-                    global_back_buffer,
-                    line_x0,
-                    line_x1,
-                    line_y0,
-                    line_y1,
-                    WHITE
-                );
+                int face_offset = 0;
+                while (true)
+                {
+                    if (face_offset == face_buffer.allocation_offset)
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        Face *face = (Face *)(face_buffer.data + face_offset);
+                        Vertex *vertex0 = (Vertex *)(vertex_buffer.data + sizeof(Vertex) * ((face->vertex_indices)[0] - 1));
+                        Vertex *vertex1 = (Vertex *)(vertex_buffer.data + sizeof(Vertex) * ((face->vertex_indices)[1] - 1));
+                        Vertex *vertex2 = (Vertex *)(vertex_buffer.data + sizeof(Vertex) * ((face->vertex_indices)[2] - 1));
+
+                        DrawTriangle(global_back_buffer, *vertex0, *vertex1, *vertex2);
+
+                        face_offset += sizeof(Face);
+                    }
+                }
+
                 HDC device_context = GetDC(window);
                 win32_window_dimension window_dimension = GetWindowDimension(window);
                 Win32DisplayBufferInWindow(
@@ -251,8 +258,6 @@ WinMain(HINSTANCE instance,
                     global_back_buffer
                 );
                 ReleaseDC(window, device_context);
-
-                x_offset++;
             }
         }
         else

@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #include "utils.hpp"
 
@@ -158,6 +159,41 @@ DrawLineBresenham(win32_offscreen_buffer buffer,
             DrawLineHigh(buffer, x1, x0, y1, y0, color);
         }
     }
+}
+
+static void
+DrawTriangle(win32_offscreen_buffer buffer,
+             Vertex vertex0,
+             Vertex vertex1,
+             Vertex vertex2)
+{
+    int width_scale = (buffer.width - 1) / 2;
+    int height_scale = (buffer.height - 1) / 2;
+
+    DrawLineBresenham(
+        buffer,
+        (vertex0.v0 + 1) * width_scale,
+        (vertex1.v0 + 1) * width_scale,
+        (vertex0.v1 + 1) * height_scale,
+        (vertex1.v1 + 1) * height_scale,
+        WHITE
+    );
+    DrawLineBresenham(
+        buffer,
+        (vertex0.v0 + 1) * width_scale,
+        (vertex2.v0 + 1) * width_scale,
+        (vertex0.v1 + 1) * height_scale,
+        (vertex2.v1 + 1) * height_scale,
+        WHITE
+    );
+    DrawLineBresenham(
+        buffer,
+        (vertex1.v0 + 1) * width_scale,
+        (vertex2.v0 + 1) * width_scale,
+        (vertex1.v1 + 1) * height_scale,
+        (vertex2.v1 + 1) * height_scale,
+        WHITE
+    );
 }
 
 #endif // DRAWING_CPP
